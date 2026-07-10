@@ -6,11 +6,25 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 // until a domain is verified. Swap to noreply@yourdomain.com once verified.
 const FROM = `Yorha <${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}>`;
 
+// Resend's SDK returns { data, error } instead of throwing — if you don't
+// check `error`, a failed send looks identical to a successful one and the
+// caller (e.g. register()) happily returns 201 with no email ever sent.
+// Wrap every send through this so failures are logged and bubble up.
+async function sendMail(payload) {
+  const { data, error } = await resend.emails.send(payload);
+  if (error) {
+    console.error('❌ Resend send failed:', JSON.stringify(error), 'to:', payload.to);
+    throw new Error(`Email send failed: ${error.message || JSON.stringify(error)}`);
+  }
+  console.log('✅ Resend sent:', data.id, 'to:', payload.to);
+  return data;
+}
+
 async function sendPasswordResetEmail(toEmail, resetToken, userName, role) {
   const resetUrl = `${process.env.CLIENT_URL}?token=${resetToken}`;
   const roleLabel = role === 'author' ? 'author' : 'reader';
 
-  await resend.emails.send({
+  await sendMail({
     from: FROM,
     to: toEmail,
     subject: 'Reset your Yorha password',
@@ -41,7 +55,7 @@ async function sendVerificationEmail(toEmail, verifyToken, userName, role) {
   const verifyUrl = `${process.env.CLIENT_URL}?verify=${verifyToken}`;
   const roleLabel = role === 'author' ? 'author' : 'reader';
 
-  await resend.emails.send({
+  await sendMail({
     from: FROM,
     to: toEmail,
     subject: 'Verify your Yorha account',
@@ -69,7 +83,7 @@ If you didn't create this account, you can safely ignore this email.
 async function sendPurchaseReceiptEmail(toEmail, userName, product, order) {
   const amount = Number(order.amount).toLocaleString();
 
-  await resend.emails.send({
+  await sendMail({
     from: FROM,
     to: toEmail,
     subject: `Your Yorha receipt — ${product.title}`,
@@ -106,7 +120,7 @@ ${process.env.CLIENT_URL}
 async function sendSaleNotificationEmail(toEmail, authorName, product, order) {
   const earnings = Number(order.authorEarns).toLocaleString();
 
-  await resend.emails.send({
+  await sendMail({
     from: FROM,
     to: toEmail,
     subject: `You made a sale! — ${product.title}`,
@@ -138,7 +152,7 @@ This has been added to your available balance.
 async function sendPayoutConfirmationEmail(toEmail, authorName, payout) {
   const amount = Number(payout.amount).toLocaleString();
 
-  await resend.emails.send({
+  await sendMail({
     from: FROM,
     to: toEmail,
     subject: `Your Yorha payout has been sent — ₦${amount}`,
