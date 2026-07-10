@@ -2,7 +2,6 @@ const express = require('express');
 const router  = express.Router();
 const crypto  = require('crypto');
 const axios   = require('axios');
-const stripe  = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Order   = require('../models/Order');
 const User    = require('../models/User');
 const Product = require('../models/Product');
@@ -277,46 +276,6 @@ router.post('/paystack/webhook', express.json(), async (req, res) => {
   } catch (err) {
     console.error('Paystack webhook error:', err.message);
     res.sendStatus(500);
-  }
-});
-
-// ── POST /api/payments/stripe/webhook
-// Raw body required — set in server.js before express.json()
-router.post('/stripe/webhook', async (req, res) => {
-  try {
-    const sig   = req.headers['stripe-signature'];
-    const event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-
-    if (event.type === 'payment_intent.succeeded') {
-      const intent    = event.data.object;
-      const reference = intent.metadata?.reference;
-
-      if (reference) {
-        const order = await Order.findOne({ paymentReference: reference });
-        if (order && order.paymentStatus !== 'completed') {
-          order.paymentStatus = 'completed';
-          order.paidAt        = new Date();
-          await order.save();
-
-          await User.findByIdAndUpdate(order.author, {
-            $inc: { balance: order.authorEarns, totalEarned: order.authorEarns },
-          });
-
-          await Product.findByIdAndUpdate(order.product, { $inc: { salesCount: 1 } });
-
-          console.log(`✅ Stripe payment confirmed: ${reference}`);
-        }
-      }
-    }
-
-    res.json({ received: true });
-  } catch (err) {
-    console.error('Stripe webhook error:', err.message);
-    res.status(400).json({ error: err.message });
   }
 });
 
