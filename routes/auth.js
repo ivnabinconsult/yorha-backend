@@ -37,20 +37,28 @@ router.post('/register', [
     const user = await User.create({
       name, email, password, role,
       ...(role === 'author' && { penName, bio, contentTypes }),
+      // TEMPORARY: auto-verified at signup. Resend needs a domain we
+      // control the DNS for to send real verification emails — until
+      // that's sorted (see note below), we can't email real users at all,
+      // so forcing verification would just lock everyone out. Flip this
+      // back to `false` (and re-enable the email send below) once a
+      // verified domain is in place.
+      isVerified: true,
     });
 
-    // Email verification — account can't log in until this link is clicked.
-    // Token is hashed before storing (same pattern as password reset);
-    // only the plaintext version goes out in the email.
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    user.verificationToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-    user.verificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24h
-    await user.save();
-
-    await sendVerificationEmail(user.email, rawToken, user.name, user.role);
+    // Verification email intentionally not sent right now — see isVerified
+    // note above. Once a real domain is verified on Resend, restore this:
+    //
+    // const rawToken = crypto.randomBytes(32).toString('hex');
+    // user.verificationToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+    // user.verificationExpires = Date.now() + 24 * 60 * 60 * 1000;
+    // await user.save();
+    // await sendVerificationEmail(user.email, rawToken, user.name, user.role);
 
     res.status(201).json({
-      message: 'Account created — check your email to verify your account.',
+      message: 'Account created successfully.',
+      token: generateToken(user._id),
+      user,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -251,7 +259,19 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
       user.resetPasswordExpires = Date.now() + 3600000;
       await user.save();
 
-      await sendPasswordResetEmail(user.email, rawToken, user.name, user.role);
+      try {
+        await sendPasswordResetEmail(user.email, rawToken, user.name, user.role);
+      } catch (mailErr) {
+        // TEMPORARY: Resend can't deliver to real users until a verified
+        // domain is set up (see routes/auth.js register route note).
+        // Surface a clear, non-technical message instead of letting the
+        // raw Resend API error reach the user, and instead of silently
+        // returning the generic "sent" message below as if it worked.
+        console.error('❌ Password reset email failed:', mailErr.message, 'to:', user.email);
+        return res.status(503).json({
+          error: "We're unable to send password reset emails right now. Please contact support to reset your password manually.",
+        });
+      }
     }
 
     res.json({ message: 'If that email exists, a reset link has been sent.' });
