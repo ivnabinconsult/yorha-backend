@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('express-mongo-sanitize');
 const startCronJobs = require('./jobs/cron');
 require('dotenv').config();
 
@@ -37,9 +38,15 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// ── Body parsers
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ── Body parsers (10mb cap — generous for JSON/form payloads; actual file
+// uploads go through multer/multer-s3 on their own routes, not through this)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ── Strip any Mongo operators ($gt, $ne, etc.) from req.body/query/params
+// so a crafted payload like { "email": { "$gt": "" } } can't manipulate
+// Mongoose queries (NoSQL injection).
+app.use(mongoSanitize());
 
 // ── Routes
 app.use('/api/auth',     require('./routes/auth'));
