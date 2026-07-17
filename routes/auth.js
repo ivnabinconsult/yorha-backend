@@ -330,14 +330,22 @@ router.post('/reset-password', async (req, res) => {
 // real one, same pattern as Reddit/most platforms handle this.
 router.delete('/me', protect, async (req, res) => {
   try {
-    const { password } = req.body;
-    if (!password) {
-      return res.status(400).json({ error: 'Please confirm your password to delete your account.' });
-    }
-
+    const { password, idToken } = req.body;
     const user = await User.findById(req.user._id).select('+password');
-    const match = await user.comparePassword(password);
-    if (!match) return res.status(401).json({ error: 'Incorrect password.' });
+
+    if (password) {
+      const match = await user.comparePassword(password);
+      if (!match) return res.status(401).json({ error: 'Incorrect password.' });
+    } else if (idToken && user.googleId) {
+      // Google-linked account confirming via a fresh Google sign-in
+      // instead of a password (they never set/know one).
+      const { googleId } = await verifyGoogleToken(idToken);
+      if (googleId !== user.googleId) {
+        return res.status(401).json({ error: 'Google confirmation did not match this account.' });
+      }
+    } else {
+      return res.status(400).json({ error: 'Please confirm your identity to delete your account.' });
+    }
 
     // Safety net: don't let an author's unpaid earnings just vanish into
     // a deleted account. Require them to withdraw first.
