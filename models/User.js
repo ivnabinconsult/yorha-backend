@@ -51,6 +51,11 @@ const userSchema = new mongoose.Schema({
   // Reader fields
   library: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Order' }],
 
+  // Set when this account was created or linked via "Continue with Google".
+  // Presence of this means Google already verified the email, so these
+  // accounts skip the email-verification-link flow entirely.
+  googleId: { type: String },
+
   isActive:  { type: Boolean, default: true },
 
   // Minimal admin flag — there's no full admin system/UI yet, just enough

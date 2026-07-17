@@ -9,6 +9,7 @@ const { sendPasswordResetEmail, sendVerificationEmail } = require('../utils/emai
 const { uploadImageSafe } = require('../middleware/upload');
 const { uploadAvatarToCloudinary, deleteCoverFromCloudinary } = require('../utils/cloudinaryUpload');
 const { loginLimiter, forgotPasswordLimiter, resendVerificationLimiter } = require('../middleware/rateLimiters');
+const { verifyGoogleToken } = require('../utils/googleAuth');
 
 // ── POST /api/auth/register
 router.post('/register', [
@@ -95,6 +96,59 @@ router.post('/login', loginLimiter, [
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/auth/google  (sign in or sign up with Google — no email
+// verification step needed, since Google already verified the address)
+router.post('/google', [
+  body('idToken').notEmpty().withMessage('Google token required'),
+  body('role').isIn(['reader', 'author']).withMessage('Role must be reader or author'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  try {
+    const { idToken, role } = req.body;
+    const { googleId, email, name } = await verifyGoogleToken(idToken);
+
+    let user = await User.findOne({ email, role });
+
+    if (!user) {
+      // First time this (email, role) pair has signed in — create the
+      // account. Password is a random, never-shown value (same pattern
+      // used for deactivated accounts below) so the schema's required
+      // password field is satisfied even though this account only ever
+      // logs in via Google.
+      user = await User.create({
+        name,
+        email,
+        password: crypto.randomBytes(32).toString('hex'),
+        role,
+        googleId,
+        isVerified: true,
+      });
+    } else if (!user.googleId) {
+      // Existing email/password account signing in with Google for the
+      // first time — link it and mark verified (Google already confirmed
+      // the email, so there's no reason to keep blocking on the old
+      // email-link verification for this account).
+      user.googleId = googleId;
+      user.isVerified = true;
+      await user.save();
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({ error: 'This account has been deactivated.' });
+    }
+
+    res.json({
+      message: 'Login successful',
+      token: generateToken(user._id),
+      user,
+    });
+  } catch (err) {
+    res.status(401).json({ error: err.message || 'Google sign-in failed.' });
   }
 });
 
