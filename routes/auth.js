@@ -117,12 +117,22 @@ router.post('/google', [
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
   try {
-    const { idToken, role } = req.body;
+    const { idToken, role, intent } = req.body; // intent: 'login' | 'signup'
     const { googleId, email, name } = await verifyGoogleToken(idToken);
 
     let user = await User.findOne({ email, role });
 
     if (!user) {
+      // Signing in (not signing up) with a Google account that has no
+      // matching Yorha account — don't silently create one. Tell the
+      // frontend so it can point the person to the signup form instead.
+      if (intent !== 'signup') {
+        return res.status(404).json({
+          error: 'No account found for this Google email. Please sign up first.',
+          noAccount: true,
+        });
+      }
+
       // First time this (email, role) pair has signed in — create the
       // account. Password is a random, never-shown value (same pattern
       // used for deactivated accounts below) so the schema's required
