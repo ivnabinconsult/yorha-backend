@@ -3,6 +3,7 @@ const router  = express.Router();
 const crypto  = require('crypto');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const Product = require('../models/Product');
 const generateToken = require('../utils/generateToken');
 const { protect } = require('../middleware/auth');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../utils/email');
@@ -361,6 +362,15 @@ router.delete('/me', protect, async (req, res) => {
     // first, same as product cover cleanup on delete.
     if (user.avatar?.publicId) {
       await deleteCoverFromCloudinary(user.avatar.publicId);
+    }
+
+    // Pull the author's works off the store. Not a hard delete — same
+    // reasoning as the account itself: existing buyers' library access and
+    // Orders/Reviews still point to these Products, so we just hide them
+    // from browsing/direct links via the same 'suspended' status the
+    // moderation system already uses, rather than deleting them outright.
+    if (user.role === 'author') {
+      await Product.updateMany({ author: user._id }, { status: 'suspended' });
     }
 
     user.isActive = false;
