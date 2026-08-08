@@ -35,7 +35,7 @@ const uploadFile = multer({
 const uploadImage = multer({
   storage,
   fileFilter: imageFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 });
 
 // Wraps a multer .single(fieldName) middleware so its errors (wrong file
