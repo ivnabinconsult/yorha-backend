@@ -25,13 +25,10 @@ router.post('/register', [
   try {
     const { name, email, password, role, penName, bio, contentTypes } = req.body;
 
-    // CHANGE: was User.findOne({ email }) — blocked the same email from
-    // ever being used for a second role. Now scoped to (email, role), so
-    // one Gmail can have both a reader and an author account.
-    const exists = await User.findOne({ email, role });
+    const exists = await User.findOne({ email });
     if (exists) {
       return res.status(409).json({
-        error: `An account with this email already exists as a ${role}. Try logging in instead.`,
+        error: 'An account with this email already exists. Try logging in instead.',
       });
     }
 
@@ -78,16 +75,15 @@ router.post('/login', loginLimiter, [
   try {
     const { email, password, role } = req.body;
 
-    // CHANGE: was User.findOne({ email }) followed by a role-mismatch check
-    // below. Now that the same email can have both a reader and an author
-    // account, we look up the specific (email, role) account directly —
-    // there's no longer a single "the account for this email" to compare
-    // roles against.
-    const user = await User.findOne({ email, role }).select('+password');
+    const user = await User.findOne({ email }).select('+password');
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const match = await user.comparePassword(password);
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+
+    if (user.role !== role) {
+      return res.status(401).json({ error: `This email is registered as a ${user.role}, not a ${role}.` });
+    }
 
     // Block unverified accounts — frontend shows a "Resend verification
     // email" link when it sees this flag.
@@ -121,7 +117,13 @@ router.post('/google', [
     const { idToken, role, intent } = req.body; // intent: 'login' | 'signup'
     const { googleId, email, name } = await verifyGoogleToken(idToken);
 
-    let user = await User.findOne({ email, role });
+    let user = await User.findOne({ email });
+
+    if (user && user.role !== role) {
+      return res.status(401).json({
+        error: `This email is registered as a ${user.role}, not a ${role}.`,
+      });
+    }
 
     if (!user) {
       // Signing in (not signing up) with a Google account that has no
@@ -208,8 +210,8 @@ router.post('/verify-email', async (req, res) => {
 // ── POST /api/auth/resend-verification
 router.post('/resend-verification', resendVerificationLimiter, async (req, res) => {
   try {
-    const { email, role } = req.body;
-    const user = await User.findOne({ email, role });
+    const { email } = req.body;
+    const user = await User.findOne({ email });
 
     // Same non-enumerating pattern as forgot-password — don't reveal
     // whether an account exists.
@@ -421,8 +423,7 @@ router.put('/profile', protect, async (req, res) => {
     const user = await User.findById(req.user._id);
 
     // Email is intentionally NOT editable here — changing it would need its
-    // own re-verification flow (and interacts with the email+role
-    // uniqueness rule), so that's out of scope for a basic profile save.
+    // own re-verification flow, so that's out of scope for a basic profile save.
     if (name !== undefined) user.name = name;
     if (penName !== undefined) user.penName = penName;
     if (handle !== undefined) user.handle = handle;
