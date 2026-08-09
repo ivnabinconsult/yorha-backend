@@ -5,6 +5,7 @@ const User    = require('../models/User');
 const { protect, restrictTo, restrictToAdmin } = require('../middleware/auth');
 const { listBanks, resolveAccountNumber } = require('../utils/paystack');
 const { sendPayoutConfirmationEmail } = require('../utils/email');
+const { createNotification } = require('./notifications');
 
 // Below this, a manual transfer isn't worth the admin overhead either.
 // ₦5,000 is a reasonable floor — easy to change if you want a different number.
@@ -146,6 +147,10 @@ router.post('/admin/:id/mark-paid', protect, restrictToAdmin, async (req, res) =
     try {
       const author = await User.findById(payout.author);
       if (author) await sendPayoutConfirmationEmail(author.email, author.name, payout);
+      await createNotification(
+        payout.author, 'payout', 'Payout sent',
+        `₦${payout.amount.toLocaleString()} sent to your bank account`, 'author-dashboard'
+      );
     } catch (emailErr) {
       console.error('Payout confirmation email failed:', emailErr.message);
     }
@@ -179,6 +184,11 @@ router.post('/admin/:id/mark-failed', protect, restrictToAdmin, async (req, res)
     payout.failureReason  = reason || 'Rejected by admin';
     payout.processedAt    = new Date();
     await payout.save();
+
+    await createNotification(
+      payout.author, 'payout', 'Payout failed',
+      `₦${payout.amount.toLocaleString()} was refunded to your balance`, 'author-dashboard'
+    );
 
     res.json({ message: 'Payout marked as failed, balance refunded', payout });
   } catch (err) {

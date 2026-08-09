@@ -8,6 +8,7 @@ const Product = require('../models/Product');
 const Payout  = require('../models/Payout');
 const { protect, restrictTo } = require('../middleware/auth');
 const { sendPurchaseReceiptEmail, sendSaleNotificationEmail } = require('../utils/email');
+const { createNotification } = require('./notifications');
 
 // CORRECTION: an earlier pass removed /paystack/initiate and
 // /paystack/verify/:reference from this file, assuming routes/orders.js's
@@ -174,6 +175,15 @@ router.get('/paystack/verify/:reference', protect, restrictTo('reader'), async (
           ]);
           await sendPurchaseReceiptEmail(req.user.email, req.user.name, product, order);
           if (author) await sendSaleNotificationEmail(author.email, author.name, product, order);
+
+          await createNotification(
+            order.buyer, 'purchase', 'Purchase confirmed',
+            `${product.title} added to your library`, 'reader-library'
+          );
+          await createNotification(
+            order.author, 'purchase', 'New sale',
+            `${product.title} sold for ₦${order.authorEarns.toLocaleString()}`, 'author-dashboard'
+          );
         } catch (emailErr) {
           console.error('Purchase/sale email failed:', emailErr.message);
         }
@@ -237,6 +247,15 @@ router.post('/paystack/webhook', express.json(), async (req, res) => {
         ]);
         if (buyer) await sendPurchaseReceiptEmail(buyer.email, buyer.name, product, order);
         if (author) await sendSaleNotificationEmail(author.email, author.name, product, order);
+
+        await createNotification(
+          order.buyer, 'purchase', 'Purchase confirmed',
+          `${product.title} added to your library`, 'reader-library'
+        );
+        await createNotification(
+          order.author, 'purchase', 'New sale',
+          `${product.title} sold for ₦${order.authorEarns.toLocaleString()}`, 'author-dashboard'
+        );
       } catch (emailErr) {
         console.error('Purchase/sale email failed:', emailErr.message);
       }
@@ -256,6 +275,14 @@ router.post('/paystack/webhook', express.json(), async (req, res) => {
         { status: 'success', processedAt: new Date() }
       );
       console.log(`✅ Payout confirmed: ${data.transfer_code}`);
+
+      const paidPayout = await Payout.findOne({ paystackTransferCode: data.transfer_code });
+      if (paidPayout) {
+        await createNotification(
+          paidPayout.author, 'payout', 'Payout sent',
+          `₦${paidPayout.amount.toLocaleString()} sent to your bank account`, 'author-dashboard'
+        );
+      }
     }
 
     if (event === 'transfer.failed') {
@@ -269,6 +296,10 @@ router.post('/paystack/webhook', express.json(), async (req, res) => {
         await User.findByIdAndUpdate(payout.author, {
           $inc: { balance: payout.amount },
         });
+        await createNotification(
+          payout.author, 'payout', 'Payout failed',
+          `₦${payout.amount.toLocaleString()} was refunded to your balance`, 'author-dashboard'
+        );
       }
     }
 

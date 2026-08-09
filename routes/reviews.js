@@ -2,7 +2,9 @@ const express = require('express');
 const router  = express.Router();
 const Review  = require('../models/Review');
 const Order   = require('../models/Order');
+const Product = require('../models/Product');
 const { protect, restrictTo } = require('../middleware/auth');
+const { createNotification } = require('./notifications');
 
 // ── GET /api/reviews/:productId  — get reviews for a product (public)
 router.get('/:productId', async (req, res) => {
@@ -42,6 +44,14 @@ router.post('/:productId', protect, restrictTo('reader'), async (req, res) => {
 
     // findOneAndUpdate does NOT trigger document middleware, so recalc manually
     await Review.calcAverageRating(productId);
+
+    const product = await Product.findById(productId);
+    if (product) {
+      await createNotification(
+        product.author, 'review', 'New review',
+        `${req.user.name} left a ${rating}-star review on ${product.title}`, 'author-dashboard'
+      );
+    }
 
     res.status(201).json({ message: 'Review submitted', review });
   } catch (err) {
