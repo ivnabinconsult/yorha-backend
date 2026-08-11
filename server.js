@@ -56,6 +56,7 @@ app.use('/api/files',    require('./routes/files'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/payouts',  require('./routes/payouts'));
 app.use('/api/reviews',  require('./routes/reviews'));
+app.use('/api/admin',    require('./routes/admin'));
 
 // ── Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
