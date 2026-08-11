@@ -78,4 +78,21 @@ router.get('/dashboard', protect, restrictToAdmin, restrictToOwner, async (req, 
   }
 });
 
+// ── GET /api/admin/users-overview
+router.get('/users-overview', protect, restrictToAdmin, restrictToOwner, async (req, res) => {
+  try {
+    const users = await User.find({}, 'name email createdAt').sort({ createdAt: -1 });
+    res.json({
+      total: users.length,
+      users: users.map(u => ({
+        name: u.name,
+        email: u.email,
+        joined: u.createdAt,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
