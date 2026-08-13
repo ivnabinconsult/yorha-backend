@@ -57,6 +57,7 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/payouts',  require('./routes/payouts'));
 app.use('/api/reviews',  require('./routes/reviews'));
 app.use('/api/reader',   require('./routes/reader'));
+app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/admin',    require('./routes/admin'));
 
 // ── Health check

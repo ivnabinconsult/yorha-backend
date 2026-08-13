@@ -43,6 +43,7 @@ const userSchema = new mongoose.Schema({
 
   // Reader fields
   library: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Order' }],
+  wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
 
   // Set when this account was created or linked via "Continue with Google".
   // Presence of this means Google already verified the email, so these
