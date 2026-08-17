@@ -6,7 +6,13 @@ const userSchema = new mongoose.Schema({
     type: String, required: true, trim: true,
   },
   email: {
-    type: String, required: true, unique: true, lowercase: true, trim: true,
+    type: String, required: true, lowercase: true, trim: true,
+    // NOTE: no `unique: true` here anymore — a single-field unique index
+    // on email would block the same Gmail from ever holding both a
+    // reader AND an author account. The compound index below (email+role)
+    // is what actually enforces uniqueness now: one account per
+    // (email, role) pair, but the same email can appear twice across
+    // the two different roles.
   },
   password: {
     // Added select: false — password is now excluded from queries by
@@ -70,6 +76,11 @@ const userSchema = new mongoose.Schema({
   resetPasswordToken:   { type: String },
   resetPasswordExpires: { type: Date },
 }, { timestamps: true });
+
+// One account per (email, role) pair — lets the same Gmail hold both a
+// reader and an author account, while still preventing duplicate
+// accounts within the same role.
+userSchema.index({ email: 1, role: 1 }, { unique: true });
 
 // Hash password before save
 userSchema.pre('save', async function () {

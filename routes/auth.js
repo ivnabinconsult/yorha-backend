@@ -25,10 +25,10 @@ router.post('/register', [
   try {
     const { name, email, password, role, penName, bio, contentTypes } = req.body;
 
-    const exists = await User.findOne({ email });
+    const exists = await User.findOne({ email, role });
     if (exists) {
       return res.status(409).json({
-        error: 'An account with this email already exists. Try logging in instead.',
+        error: `An ${role} account with this email already exists. Try logging in instead.`,
       });
     }
 
@@ -75,15 +75,14 @@ router.post('/login', loginLimiter, [
   try {
     const { email, password, role } = req.body;
 
-    const user = await User.findOne({ email }).select('+password');
+    // Scoped by role so this only ever matches the account for the portal
+    // being logged into — the same email can have a separate account
+    // under the other role, and this must not touch that one.
+    const user = await User.findOne({ email, role }).select('+password');
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const match = await user.comparePassword(password);
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
-
-    if (user.role !== role) {
-      return res.status(401).json({ error: `This email is registered as a ${user.role}, not a ${role}.` });
-    }
 
     // Block unverified accounts — frontend shows a "Resend verification
     // email" link when it sees this flag.
@@ -117,13 +116,10 @@ router.post('/google', [
     const { idToken, role, intent } = req.body; // intent: 'login' | 'signup'
     const { googleId, email, name } = await verifyGoogleToken(idToken);
 
-    let user = await User.findOne({ email });
-
-    if (user && user.role !== role) {
-      return res.status(401).json({
-        error: `This email is registered as a ${user.role}, not a ${role}.`,
-      });
-    }
+    // Scoped by role: the same Gmail can hold a separate reader account
+    // and author account, so this must only ever find/create the one
+    // matching the portal being used, never fall back to the other.
+    let user = await User.findOne({ email, role });
 
     if (!user) {
       // Signing in (not signing up) with a Google account that has no
@@ -210,8 +206,10 @@ router.post('/verify-email', async (req, res) => {
 // ── POST /api/auth/resend-verification
 router.post('/resend-verification', resendVerificationLimiter, async (req, res) => {
   try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
+    const { email, role } = req.body;
+    // Scoped by role — the frontend triggers this from a specific
+    // role's login box, so it should only ever touch that account.
+    const user = await User.findOne({ email, role });
 
     // Same non-enumerating pattern as forgot-password — don't reveal
     // whether an account exists.
