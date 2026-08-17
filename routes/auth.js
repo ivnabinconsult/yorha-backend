@@ -5,7 +5,8 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Product = require('../models/Product');
 const generateToken = require('../utils/generateToken');
-const { protect } = require('../middleware/auth');
+const generateAdminToken = require('../utils/generateAdminToken');
+const { protect, restrictToAdmin } = require('../middleware/auth');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../utils/email');
 const { uploadImageSafe } = require('../middleware/upload');
 const { uploadAvatarToCloudinary, deleteCoverFromCloudinary } = require('../utils/cloudinaryUpload');
@@ -172,6 +173,18 @@ router.post('/google', [
 // ── GET /api/auth/me  (get logged-in user)
 router.get('/me', protect, async (req, res) => {
   res.json({ user: req.user });
+});
+
+// ── POST /api/auth/admin-token
+// Mints a long-lived (default 1yr) token for admin-dashboard.html /
+// users-overview.html, so those don't need re-logging-in every 24h like
+// a normal session. Requires calling this while ALREADY logged in with a
+// valid, current admin session — can't be used to escalate access, only
+// to extend how long an already-verified admin stays logged in on a
+// device. Mint it once (e.g. from the main app's admin panel while on
+// desktop), then paste the result into the token box on any other device.
+router.post('/admin-token', protect, restrictToAdmin, (req, res) => {
+  res.json({ token: generateAdminToken(req.user._id) });
 });
 
 // ── POST /api/auth/verify-email
